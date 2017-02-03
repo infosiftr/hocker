@@ -1,0 +1,10 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+for comb; do
+	(
+		set -- # reset "$@"
+		set_script_vars "$comb"
+		source "$script"
+	)
+done
