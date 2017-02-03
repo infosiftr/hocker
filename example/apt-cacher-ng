@@ -1,0 +1,6 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+hocker_run tianon/apt-cacher-ng \
+	--dns 8.8.8.8 --dns 8.8.4.4 \
+	--tmpfs /var/cache/apt-cacher-ng

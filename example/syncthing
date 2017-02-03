@@ -1,0 +1,20 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+[ "$HOME" != '/home/user' ] || script_error 'uh oh, HOME=/home/user'
+
+configDir="$HOME/.config/syncthing"
+targetConfigDir='/home/user/.config/syncthing'
+
+mkdir -p "$configDir"
+
+hocker_run 'tianon/syncthing:0.14' \
+	-v "$configDir:$targetConfigDir" \
+	-e STNODEFAULTFOLDER=1 \
+	-e STNOUPGRADE=1 \
+	--net host \
+	--user "$(id -u):$(id -g)" \
+	\
+	-v "$HOME:$HOME" \
+	-v /etc:/etc \
+	-v /mnt:/mnt
