@@ -2,12 +2,22 @@
 set -Eeuo pipefail
 
 panic() {
-	echo >&2 'panic:' "$@"
-	echo >&2 'backtrace:'
-	local i=0
-	while caller "$i"; do
-		i="$((i+1))"
-	done
+	{
+		echo
+		echo 'panic:' "$@"
+		echo
+		echo "subshell level: $BASH_SUBSHELL"
+		echo 'backtrace:'
+		local i=0 call
+		while call="$(caller "$i")"; do
+			local line="$(echo "$call" | cut -d' ' -f1)"
+			local func="$(echo "$call" | cut -d' ' -f2)"
+			local file="$(echo "$call" | cut -d' ' -f3-)"
+			printf '  %q:%s (%q)\n' "$file" "$line" "$func"
+			i="$((i+1))"
+		done
+		echo
+	} >&2
 	exit 99
 }
 trap 'panic ERR trap' ERR
