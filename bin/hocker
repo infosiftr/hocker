@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+panic() {
+	echo >&2 'panic:' "$@"
+	echo >&2 'backtrace:'
+	local i=0
+	while caller "$i"; do
+		i="$((i+1))"
+	done
+	exit 99
+}
+trap 'panic ERR trap' ERR
+
+hocker_usage() {
+	local self="$(basename "$0")"
+	cat <<-EOF
+
+		usage:
+
+		  #!/usr/bin/env $self
+		  # vim:set ft=sh:
+
+		  # "--name" is defaulted to the name of the script being run
+		  hocker_run --name db mysql:5.7 \\
+		      --cpus 1.0 \\
+		      -- \\
+		      --character-set-server=utf8mb4 \\
+		      --collation-server=utf8mb4_unicode_ci
+
+	EOF
+}
+
+script="${1:-}"
+if ! shift || [ -z "$script" ]; then
+	hocker_usage >&2
+	exit 1
+fi
+
+case "$script" in
+	--help|-h|'-?')
+		hocker_usage
+		exit 0
+		;;
+esac
+
+set_script_vars() {
+	[ "$#" -eq 0 ] || script="$1"
+	[ -n "$script" ] || panic "missing 'script' name"
+	[ -r "$script" ] || panic "script '$script' not readable (does it exist?)"
+
+	scriptDir="$(cd "$(dirname "$script")" && pwd)" # absolute, but not dereferenced (directory of the symlink)
+	scriptName="$(basename "$script")" # just the name of the symlink (default container name)
+	script="$scriptDir/$scriptName" # absolute, but not dereferenced (the symlink)
+	absScript="$(readlink -f "$script")" # target of the symlink
+	absDir="$(dirname "$absScript")" # directory of the target of the symlink
+}
+set_script_vars
+
+declare -A flagDefaults=(
+	[pull]='missing'
+	[redeploy]='never'
+)
+script_usage() {
+	cat <<-EOF
+
+		usage: $scriptName [options]
+		   ie: $scriptName --redeploy smart --pull always
+		       $scriptName --redeploy always
+		       $scriptName --pull never
+
+		options:
+
+		  --pull [always|missing|never] (default: ${flagDefaults[pull]})
+
+		  --redeploy [smart|always|never] (default: ${flagDefaults[redeploy]})
+
+		  -p (alias for '--pull always')
+		  -s (alias for '--redeploy smart')
+
+	EOF
+}
+
+script_error() {
+	{
+		[ "$#" -eq 0 ] || echo 'error:' "$@"
+		script_usage
+	} >&2
+	exit 1
+}
+
+if ! opts="$(getopt -o '+h?ps' --long 'help,pull:,redeploy:' -- "$@")"; then
+	script_error # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
+fi
+eval set -- "$opts"
+unset opts
+
+declare -A flagValues=(
+	[pull]=
+	[redeploy]=
+)
+while true; do
+	flag="$1"
+	shift
+	case "$flag" in
+		--help|-h|'-?') script_usage && exit 0 ;;
+		--pull) flagValues[pull]="$1" && shift ;;
+		-p) flagValues[pull]='always' ;;
+		--redeploy) flagValues[redeploy]="$1" && shift ;;
+		-s) flagValues[redeploy]='smart' ;;
+		--) break ;;
+		*) script_error "unknown flag '$flag'" ;;
+	esac
+done
+unset flag
+
+hocker_run() {
+	local opts="$(getopt -o '+' --long 'name:' -- "$@")"
+	eval set -- "$opts"
+
+	local containerName="$scriptName"
+	while true; do
+		local flag="$1"
+		shift
+		case "$flag" in
+			# --redeploy-hook ? (for HUP nginx, etc)
+			--name) containerName="$1" && shift ;;
+			--) break ;;
+			*) panic "unknown hocker_run flag '$flag'" ;;
+		esac
+	done
+
+	local imageName="$1"
+	shift
+
+	local dockerArgs=(
+		--name "$containerName"
+		--detach
+		--restart always
+	)
+	while [ "$#" -gt 0 ]; do
+		local arg="$1"
+		shift
+		if [ "$arg" = '--' ]; then
+			break
+		fi
+		dockerArgs+=( "$arg" )
+	done
+	local containerArgs=( "$imageName" "$@" )
+
+	echo
+
+	local missingImage=
+	if ! docker inspect "$imageName" &> /dev/null; then
+		missingImage=1
+	fi
+	local doPull="$missingImage"
+	local pull="${flagValues[pull]:-${flagDefaults[pull]}}"
+	case "$pull" in
+		always) doPull=1 ;;
+		missing) ;;
+		never)
+			if [ "$missingImage" ]; then
+				script_error "missing image '$imageName' and --pull is 'never'"
+			fi
+			;;
+		*) script_error "unrecognized value for --pull '$pull'" ;;
+	esac
+
+	if [ "$doPull" ]; then
+		echo "Pulling '$imageName' ..."
+		docker pull "$imageName"
+	else
+		echo "Not pulling '$imageName' (--pull '$pull')"
+	fi
+	echo
+
+	local missingContainer=
+	if ! docker inspect "$containerName" &> /dev/null; then
+		missingContainer=1
+	fi
+	local doDeploy="$missingContainer"
+	local redeploy="${flagValues[redeploy]:-${flagDefaults[redeploy]}}"
+	case "$redeploy" in
+		always) doDeploy=1 ;;
+		never) ;; # never REdeploy -- used to deploy at least once (so whether to deploy depends on whether our container is missing)
+		smart)
+			if [ ! "$missingContainer" ]; then
+				local containerImageId="$(docker inspect --format '{{ .Image }}' "$containerName")"
+				local imageId="$(docker inspect --format '{{ .Id }}' "$imageName")"
+				if [ "$containerImageId" != "$imageId" ]; then
+					doDeploy=1
+				fi
+			fi
+			;;
+		*) script_error "unrecognized value for --redeploy '$redeploy'" ;;
+	esac
+
+	if [ "$doDeploy" ]; then
+		if [ ! "$missingContainer" ]; then
+			echo "Stopping '$containerName' ..."
+			docker stop "$containerName"
+			echo "Removing '$containerName' ..."
+			docker rm "$containerName"
+		fi
+		echo
+
+		echo "Starting '$containerName' (from '$imageName') ..."
+		docker run "${dockerArgs[@]}" "${containerArgs[@]}" # imageName is in containerArgs (see http://stackoverflow.com/a/7577209/433558)
+	else
+		echo "Not $([ "$missingContainer" ] && echo 'starting' || echo 'restarting') '$containerName' (--redeploy '$redeploy')"
+	fi
+	echo
+}
+
+source "$script"
