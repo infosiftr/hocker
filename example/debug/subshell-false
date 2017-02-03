@@ -1,0 +1,20 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+t() {
+	true
+	false
+	true
+}
+
+true
+(
+	true
+	(
+		true
+		t
+		true
+	)
+	true
+)
+true
