@@ -1,0 +1,14 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+cat <<-EOF
+
+	script:    $script
+	scriptDir: $scriptDir
+	absScript: $absScript
+	absDir:    $absDir
+
+	scriptName: $scriptName
+	args:       $*
+
+EOF
