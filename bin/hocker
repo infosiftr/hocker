@@ -87,6 +87,7 @@ script_usage() {
 
 		  -p (alias for '--pull always')
 		  -s (alias for '--redeploy smart')
+		  -f (alias for '--redeploy always')
 
 	EOF
 }
@@ -99,7 +100,7 @@ script_error() {
 	exit 1
 }
 
-if ! opts="$(getopt -o '+h?ps' --long 'help,pull:,redeploy:' -- "$@")"; then
+if ! opts="$(getopt -o '+h?psf' --long 'help,pull:,redeploy:' -- "$@")"; then
 	script_error # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 fi
 eval set -- "$opts"
@@ -118,6 +119,7 @@ while true; do
 		-p) flagValues[pull]='always' ;;
 		--redeploy) flagValues[redeploy]="$1" && shift ;;
 		-s) flagValues[redeploy]='smart' ;;
+		-f) flagValues[redeploy]='always' ;;
 		--) break ;;
 		*) script_error "unknown flag '$flag'" ;;
 	esac
