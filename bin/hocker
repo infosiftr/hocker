@@ -69,6 +69,7 @@ set_script_vars
 
 declare -A flagDefaults=(
 	[pull]='missing'
+	[build]='missing'
 	[redeploy]='never'
 )
 script_usage() {
@@ -83,9 +84,12 @@ script_usage() {
 
 		  --pull [always|missing|never] (default: ${flagDefaults[pull]})
 
+		  --build [always|missing|never] (default: ${flagDefaults[build]})
+
 		  --redeploy [smart|always|never] (default: ${flagDefaults[redeploy]})
 
 		  -p (alias for '--pull always')
+		  -b (alias for '--build always')
 		  -s (alias for '--redeploy smart')
 		  -f (alias for '--redeploy always')
 
@@ -100,7 +104,7 @@ script_error() {
 	exit 1
 }
 
-if ! opts="$(getopt -o '+h?psf' --long 'help,pull:,redeploy:' -- "$@")"; then
+if ! opts="$(getopt -o '+h?pbsf' --long 'help,pull:,build:,redeploy:' -- "$@")"; then
 	script_error # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 fi
 eval set -- "$opts"
@@ -108,6 +112,7 @@ unset opts
 
 declare -A flagValues=(
 	[pull]=
+	[build]=
 	[redeploy]=
 )
 while true; do
@@ -115,11 +120,17 @@ while true; do
 	shift
 	case "$flag" in
 		--help|-h|'-?') script_usage && exit 0 ;;
+
 		--pull) flagValues[pull]="$1" && shift ;;
 		-p) flagValues[pull]='always' ;;
+
+		--build) flagValues[build]="$1" && shift ;;
+		-b) flagValues[build]='always' ;;
+
 		--redeploy) flagValues[redeploy]="$1" && shift ;;
 		-s) flagValues[redeploy]='smart' ;;
 		-f) flagValues[redeploy]='always' ;;
+
 		--) break ;;
 		*) script_error "unknown flag '$flag'" ;;
 	esac
@@ -128,22 +139,27 @@ unset flag
 
 hocker_run() {
 	local opts
-	if ! opts="$(getopt -o '+' --long 'name:' -- "$@")"; then
+	if ! opts="$(getopt -o '+' --long 'name:,build:' -- "$@")"; then
 		panic 'hocker_run getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName"
+	local containerName="$scriptName" buildDir=
 	while true; do
 		local flag="$1"
 		shift
 		case "$flag" in
 			# --redeploy-hook ? (for HUP nginx, etc)
 			--name) containerName="$1" && shift ;;
+			--build) buildDir="$1" && shift ;;
 			--) break ;;
 			*) panic "unknown hocker_run flag '$flag'" ;;
 		esac
 	done
+
+	if [ -n "$buildDir" ]; then
+		[ -d "$buildDir" ] || script_error "--build specified but '$buildDir' is not a directory"
+	fi
 
 	local imageName="$1"
 	shift
@@ -169,6 +185,29 @@ hocker_run() {
 	if ! docker inspect --type image "$imageName" &> /dev/null; then
 		missingImage=1
 	fi
+
+	local imageToPull="$imageName"
+	local doBuild=
+	if [ -n "$buildDir" ]; then
+		local build="${flagValues[build]:-${flagDefaults[build]}}"
+		case "$build" in
+			always) doBuild=1 ;;
+			missing) doBuild="$missingImage" ;;
+			never)
+				if [ "$missingImage" ]; then
+					script_error "missing image '$imageName' and --build is 'never'"
+				fi
+				;;
+			*) script_error "unrecognized value for --build '$build'" ;;
+		esac
+		# TODO multi-stage builds totally break this assumption </cry>
+		imageToPull="$(awk 'toupper($1) == "FROM" { print $2; exit }' "$buildDir/Dockerfile")"
+		missingImage=
+		if ! docker inspect "$imageToPull" &> /dev/null; then
+			missingImage=1
+		fi
+	fi
+
 	local doPull="$missingImage"
 	local pull="${flagValues[pull]:-${flagDefaults[pull]}}"
 	case "$pull" in
@@ -176,17 +215,25 @@ hocker_run() {
 		missing) ;;
 		never)
 			if [ "$missingImage" ]; then
-				script_error "missing image '$imageName' and --pull is 'never'"
+				script_error "missing image '$imageToPull' and --pull is 'never'"
 			fi
 			;;
 		*) script_error "unrecognized value for --pull '$pull'" ;;
 	esac
 
 	if [ "$doPull" ]; then
-		echo "Pulling '$imageName' ..."
-		docker pull "$imageName"
+		echo "Pulling '$imageToPull' ..."
+		docker pull "$imageToPull"
 	else
-		echo "Not pulling '$imageName' (--pull '$pull')"
+		echo "Not pulling '$imageToPull' (--pull '$pull')"
+	fi
+	if [ "$doBuild" ]; then
+		echo
+		echo "Building '$imageName' (from '$buildDir') ..."
+		docker build -t "$imageName" "$buildDir"
+	elif [ -n "$buildDir" ]; then
+		echo
+		echo "Not building '$imageName' (--build '$build')"
 	fi
 	echo
 
