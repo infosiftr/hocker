@@ -163,7 +163,7 @@ hocker_run() {
 	echo
 
 	local missingImage=
-	if ! docker inspect "$imageName" &> /dev/null; then
+	if ! docker inspect --type image "$imageName" &> /dev/null; then
 		missingImage=1
 	fi
 	local doPull="$missingImage"
@@ -188,7 +188,7 @@ hocker_run() {
 	echo
 
 	local missingContainer=
-	if ! docker inspect "$containerName" &> /dev/null; then
+	if ! docker inspect --type container "$containerName" &> /dev/null; then
 		missingContainer=1
 	fi
 	local doDeploy="$missingContainer"
@@ -198,8 +198,8 @@ hocker_run() {
 		never) ;; # never REdeploy -- used to deploy at least once (so whether to deploy depends on whether our container is missing)
 		smart)
 			if [ ! "$missingContainer" ]; then
-				local containerImageId="$(docker inspect --format '{{ .Image }}' "$containerName")"
-				local imageId="$(docker inspect --format '{{ .Id }}' "$imageName")"
+				local containerImageId="$(docker inspect --format '{{ .Image }}' --type container "$containerName")"
+				local imageId="$(docker inspect --format '{{ .Id }}' --type image "$imageName")"
 				if [ "$containerImageId" != "$imageId" ]; then
 					doDeploy=1
 				fi
