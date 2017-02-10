@@ -1,0 +1,33 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+dockerArgs=(
+	-v /var/run/docker.sock:/var/run/docker.sock
+)
+
+dockerIp="$(ip addr show dev docker0 | awk '$1 == "inet" { gsub(/\/.*/, "", $2); print $2; exit }')"
+if [ "$dockerIp" ]; then
+	dockerArgs+=(
+		-p "$dockerIp":53:53/tcp
+		-p "$dockerIp":53:53/udp
+		-p 127.0.0.1:53:53/tcp
+		-p 127.0.0.1:53:53/udp
+	)
+else
+	dockerArgs+=(
+		-p 53:53/udp
+		-p 53:53/tcp
+	)
+fi
+
+config="$scriptDir/.$scriptName.json"
+if [ -f "$config" ]; then
+	config="$(readlink -f "$config")" # resolve symlinks here too, just in case
+	dockerArgs+=(
+		-v "$config":/etc/rawdns/config.json:ro
+		--
+		rawdns /etc/rawdns/config.json
+	)
+fi
+
+hocker_run 'tianon/rawdns' "${dockerArgs[@]}"
