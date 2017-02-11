@@ -3,6 +3,7 @@
 
 dockerArgs=(
 	-v /var/run/docker.sock:/var/run/docker.sock
+	-m 32m
 )
 
 dockerIp="$(ip addr show dev docker0 | awk '$1 == "inet" { gsub(/\/.*/, "", $2); print $2; exit }')"
