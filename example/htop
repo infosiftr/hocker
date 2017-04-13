@@ -1,0 +1,6 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+hocker_run --build "$scriptDir/.$scriptName" 'htop' \
+	--interactive --tty \
+	--pid host
