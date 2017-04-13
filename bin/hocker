@@ -127,7 +127,10 @@ done
 unset flag
 
 hocker_run() {
-	local opts="$(getopt -o '+' --long 'name:' -- "$@")"
+	local opts
+	if ! opts="$(getopt -o '+' --long 'name:' -- "$@")"; then
+		panic 'hocker_run getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
+	fi
 	eval set -- "$opts"
 
 	local containerName="$scriptName"
