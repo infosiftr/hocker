@@ -275,4 +275,18 @@ hocker_run() {
 	echo
 }
 
+hocker_network_create() {
+	local networkName="$1"
+	shift
+
+	echo
+
+	if ! docker network inspect "$networkName" &> /dev/null; then
+		echo "Creating network '$networkName' ..."
+		docker network create "$@" "$networkName"
+	else
+		echo "Not creating network '$networkName' (already exists)"
+	fi
+}
+
 source "$script"
