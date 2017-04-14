@@ -1,0 +1,6 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+hocker_network_create "$1" \
+	--driver bridge \
+	--opt com.docker.network.bridge.name="br-$1"

@@ -1,0 +1,9 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+source "$scriptDir/.network-create" wordpress
+
+hocker_run 'mysql:5.7' \
+	--network wordpress \
+	-e MYSQL_ROOT_PASSWORD=example \
+	-v wordpress-mysql:/var/lib/mysql

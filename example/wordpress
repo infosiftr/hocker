@@ -1,0 +1,11 @@
+#!/usr/bin/env hocker
+# vim:set ft=sh:
+
+source "$scriptDir/.network-create" wordpress
+
+hocker_run 'wordpress' \
+	--network wordpress \
+	-e WORDPRESS_DB_HOST=wordpress-mysql \
+	-e WORDPRESS_DB_USER=root \
+	-e WORDPRESS_DB_PASSWORD=example \
+	-v wordpress-data:/var/www/html
