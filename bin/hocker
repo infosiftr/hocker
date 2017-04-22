@@ -289,4 +289,56 @@ hocker_network_create() {
 	fi
 }
 
+_hocker_network_has_container() {
+	local networkName="$1"
+	shift
+	local containerName="$1"
+	shift
+
+	local containerNetworks=( $(
+		docker inspect --type container --format '
+			{{- range $n, $d := .NetworkSettings.Networks -}}
+				{{- $n -}}{{- "\n" -}}
+			{{- end -}}
+		' "$containerName" 2>/dev/null
+	) )
+	if [ "${#containerNetworks[@]}" -gt 0 ]; then
+		for network in "${containerNetworks[@]}"; do
+			if [ "$network" = "$networkName" ]; then
+				return 0
+			fi
+		done
+	fi
+	return 1
+}
+
+hocker_network_connect() {
+	local opts
+	if ! opts="$(getopt -o '+' --long 'container:' -- "$@")"; then
+		panic 'hocker_network_connect getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
+	fi
+	eval set -- "$opts"
+
+	local containerName="$scriptName" buildDir=
+	while true; do
+		local flag="$1"
+		shift
+		case "$flag" in
+			--container) containerName="$1" && shift ;;
+			--) break ;;
+			*) panic "unknown hocker_network_connect flag '$flag'" ;;
+		esac
+	done
+
+	local networkName="$1"
+	shift
+
+	if ! _hocker_network_has_container "$networkName" "$containerName"; then
+		echo "Connecting '$containerName' to network '$networkName' ..."
+		docker network connect "$@" "$networkName" "$containerName"
+	else
+		echo "Not connecting '$containerName' to network '$networkName' (already connected)"
+	fi
+}
+
 source "$script"

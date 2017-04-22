@@ -9,3 +9,6 @@ hocker_run 'wordpress' \
 	-e WORDPRESS_DB_USER=root \
 	-e WORDPRESS_DB_PASSWORD=example \
 	-v wordpress-data:/var/www/html
+
+source "$scriptDir/.network-create" nginx
+hocker_network_connect nginx
