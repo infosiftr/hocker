@@ -1,9 +1,9 @@
 #!/usr/bin/env hocker
 # vim:set ft=sh:
 
-source "$scriptDir/.network-create" wordpress
+source "$scriptDir/.network-create" nginx
 
 hocker_run 'nginx:alpine' \
-	--network wordpress \
+	--network nginx \
 	-p 80:80 \
 	-v "$scriptDir/.$scriptName.conf":/etc/nginx/conf.d/default.conf:ro
