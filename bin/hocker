@@ -185,8 +185,9 @@ hocker_run() {
 
 	echo
 
-	local missingImages=() alwaysPull=( "$imageName" )
+	local missingImage= missingImages=() alwaysPull=( "$imageName" )
 	if ! docker inspect --type image "$imageName" &> /dev/null; then
+		missingImage="$imageName"
 		missingImages+=( "$imageName" )
 	fi
 
@@ -198,8 +199,8 @@ hocker_run() {
 			always) doBuild=1 ;;
 			missing) doBuild="$missingImage" ;;
 			never)
-				if [ "$missingImage" ]; then
-					script_error "missing image '$imageName' and --build is 'never'"
+				if [ -n "$missingImage" ]; then
+					script_error "missing image '$missingImage' and --build is 'never'"
 				fi
 				;;
 			*) script_error "unrecognized value for --build '$build'" ;;
