@@ -139,12 +139,12 @@ unset flag
 
 hocker_run() {
 	local opts
-	if ! opts="$(getopt -o '+' --long 'name:,build:' -- "$@")"; then
+	if ! opts="$(getopt -o '+' --long 'name:,build:,build-arg:' -- "$@")"; then
 		panic 'hocker_run getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName" buildDir=
+	local containerName="$scriptName" buildDir= buildArgs=()
 	while true; do
 		local flag="$1"
 		shift
@@ -152,6 +152,7 @@ hocker_run() {
 			# --redeploy-hook ? (for HUP nginx, etc)
 			--name) containerName="$1" && shift ;;
 			--build) buildDir="$1" && shift ;;
+			--build-arg) buildArgs+=( "$1" ) && shift ;;
 			--) break ;;
 			*) panic "unknown hocker_run flag '$flag'" ;;
 		esac
@@ -159,6 +160,9 @@ hocker_run() {
 
 	if [ -n "$buildDir" ]; then
 		[ -d "$buildDir" ] || script_error "--build specified but '$buildDir' is not a directory"
+	fi
+	if [ "${#buildArgs[@]}" -gt 0 ] && [ -z "$buildDir" ]; then
+		script_error "--build-arg specified but '--build' was not"
 	fi
 
 	local imageName="$1"
@@ -181,9 +185,9 @@ hocker_run() {
 
 	echo
 
-	local missingImage=
+	local missingImages=() alwaysPull=( "$imageName" )
 	if ! docker inspect --type image "$imageName" &> /dev/null; then
-		missingImage=1
+		missingImages+=( "$imageName" )
 	fi
 
 	local imageToPull="$imageName"
@@ -200,37 +204,53 @@ hocker_run() {
 				;;
 			*) script_error "unrecognized value for --build '$build'" ;;
 		esac
-		# TODO multi-stage builds totally break this assumption </cry>
-		imageToPull="$(awk 'toupper($1) == "FROM" { print $2; exit }' "$buildDir/Dockerfile")"
-		missingImage=
-		if ! docker inspect "$imageToPull" &> /dev/null; then
-			missingImage=1
-		fi
+		buildFroms="$(
+			awk '
+				toupper($1) == "FROM" { print $2 }
+				toupper($1) == "COPY" {
+					for (i = 2; i < NF; i++) {
+						if ($i !~ /^--/) { break }
+						if ($i ~ /^--from=/) { gsub(/^--from=/, "", $i); print $i }
+					}
+				}
+			' "$buildDir/Dockerfile"
+		)"
+		# reset "alwaysPull" and "missingImages" since if we're supposed to build $imageName, we shouldn't ever pull $imageName
+		alwaysPull=(); missingImages=()
+		for buildFrom in $buildFroms; do
+			alwaysPull+=( $buildFrom )
+			if ! docker inspect "$buildFrom" &> /dev/null; then
+				missingImages+=( "$buildFrom" )
+			fi
+		done
 	fi
 
-	local doPull="$missingImage"
+	local doPull=()
 	local pull="${flagValues[pull]:-${flagDefaults[pull]}}"
 	case "$pull" in
-		always) doPull=1 ;;
-		missing) ;;
+		always) doPull=( "${alwaysPull[@]}" ) ;;
+		missing) doPull=( "${missingImages[@]}" ) ;;
 		never)
-			if [ "$missingImage" ]; then
-				script_error "missing image '$imageToPull' and --pull is 'never'"
+			if [ "${#missingImages[@]}" -gt 0 ]; then
+				script_error "--pull is 'never' and missing images: ${missingImages[*]}"
 			fi
 			;;
 		*) script_error "unrecognized value for --pull '$pull'" ;;
 	esac
 
-	if [ "$doPull" ]; then
-		echo "Pulling '$imageToPull' ..."
-		docker pull "$imageToPull"
+	if [ "${#doPull[@]}" -gt 0 ]; then
+		for imageToPull in "${doPull[@]}"; do
+			echo "Pulling '$imageToPull' ..."
+			docker pull "$imageToPull"
+		done
 	else
-		echo "Not pulling '$imageToPull' (--pull '$pull')"
+		echo "Not pulling (--pull '$pull'): ${alwaysPull[*]}"
 	fi
 	if [ "$doBuild" ]; then
 		echo
 		echo "Building '$imageName' (from '$buildDir') ..."
-		docker build -t "$imageName" "$buildDir"
+		buildArgs+=( -t "$imageName" "$buildDir" )
+		docker build "${buildArgs[@]}"
 	elif [ -n "$buildDir" ]; then
 		echo
 		echo "Not building '$imageName' (--build '$build')"
