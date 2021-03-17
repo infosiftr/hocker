@@ -67,6 +67,6 @@ Not restarting 'apt-cacher-ng' (--redeploy 'smart')
 
 The "smart" redeployment logic will only restart our `apt-cacher-ng` container when the associated image it's started from changes.
 
-## You're insane.
+## ...
 
 [youtu.be/79DijItQXMM](https://youtu.be/79DijItQXMM)
