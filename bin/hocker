@@ -104,7 +104,7 @@ script_error() {
 	exit 1
 }
 
-if ! opts="$(getopt -o '+h?pbsf' --long 'help,pull:,build:,redeploy:' -- "$@")"; then
+if ! opts="$(getopt -o '+h?pbsf' --long 'help,pull:,build:,redeploy:,interactive' -- "$@")"; then
 	script_error # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 fi
 eval set -- "$opts"
@@ -114,6 +114,7 @@ declare -A flagValues=(
 	[pull]=
 	[build]=
 	[redeploy]=
+	[interactive]=
 )
 while true; do
 	flag="$1"
@@ -131,11 +132,22 @@ while true; do
 		-s) flagValues[redeploy]='smart' ;;
 		-f) flagValues[redeploy]='always' ;;
 
+		--interactive) flagValues[interactive]=1 ;; # "secret tunnel, secret tunnel" (this is an intentionally undocumented feature)
+
 		--) break ;;
 		*) script_error "unknown flag '$flag'" ;;
 	esac
 done
 unset flag
+
+interactiveArguments=()
+if [ "$#" -gt 0 ]; then
+	if [ -z "${flagValues[interactive]}" ]; then
+		script_error "unexpected arguments: $*"
+	else
+		interactiveArguments=( "$@" )
+	fi
+fi
 
 hocker_run() {
 	local opts
@@ -170,9 +182,21 @@ hocker_run() {
 
 	local dockerArgs=(
 		--name "$containerName"
-		--detach
-		--restart always
 	)
+	if [ -z "${flagValues[interactive]}" ]; then
+		dockerArgs+=(
+			--detach
+			--restart always
+		)
+	else
+		dockerArgs+=(
+			--interactive
+			--rm
+		)
+		if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+			dockerArgs+=( --tty )
+		fi
+	fi
 	while [ "$#" -gt 0 ]; do
 		local arg="$1"
 		shift
@@ -181,7 +205,16 @@ hocker_run() {
 		fi
 		dockerArgs+=( "$arg" )
 	done
-	local containerArgs=( "$imageName" "$@" )
+
+	local containerArgs=( "$imageName" )
+	if [ -z "${flagValues[interactive]}" ] || [ "${#interactiveArguments[@]}" -eq 0 ]; then
+		containerArgs+=( "$@" )
+	else
+		dockerArgs+=( --entrypoint "${interactiveArguments[0]}" )
+		if [ "${#interactiveArguments[@]}" -gt 1 ]; then
+			containerArgs+=( "${interactiveArguments[@]:1}" )
+		fi
+	fi
 
 	echo
 
@@ -283,15 +316,21 @@ hocker_run() {
 		if [ ! "$missingContainer" ]; then
 			echo "Stopping '$containerName' ..."
 			docker stop "$containerName"
-			echo "Removing '$containerName' ..."
-			docker rm "$containerName"
+			if docker container inspect "$containerName" &> /dev/null; then # container might have "--rm" and be gone already via stop
+				echo "Removing '$containerName' ..."
+				docker rm "$containerName"
+			fi
 		fi
 		echo
 
 		echo "Starting '$containerName' (from '$imageName') ..."
 		docker run "${dockerArgs[@]}" "${containerArgs[@]}" # imageName is in containerArgs (see http://stackoverflow.com/a/7577209/433558)
 	else
-		echo "Not $([ "$missingContainer" ] && echo 'starting' || echo 'restarting') '$containerName' (--redeploy '$redeploy')"
+		restarting="restarting '$containerName' (--redeploy '$redeploy')"
+		if [ -n "${flagValues[interactive]}" ]; then
+			script_error "not $restarting, but --interactive requested"$'\n'"  (try -f?  will stop/remove '$containerName')"
+		fi
+		echo "Not $restarting"
 	fi
 	echo
 }
