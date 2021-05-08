@@ -143,7 +143,8 @@ unset flag
 interactiveArguments=()
 if [ "$#" -gt 0 ]; then
 	if [ -z "${flagValues[interactive]}" ]; then
-		script_error "unexpected arguments: $*"
+		: #script_error "unexpected arguments: $*"
+		# ("multihocker" is implemented as a hocker that takes arguments /o\)
 	else
 		interactiveArguments=( "$@" )
 	fi
