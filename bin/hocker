@@ -183,6 +183,7 @@ hocker_run() {
 
 	local dockerArgs=(
 		--name "$containerName"
+		--pull never
 	)
 	if [ -z "${flagValues[interactive]}" ]; then
 		dockerArgs+=(
