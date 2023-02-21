@@ -152,12 +152,12 @@ fi
 
 hocker_run() {
 	local opts
-	if ! opts="$(getopt -o '+' --long 'name:,build:,build-arg:' -- "$@")"; then
+	if ! opts="$(getopt -o '+' --long 'name:,build:,build-arg:,platform:' -- "$@")"; then
 		panic 'hocker_run getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName" buildDir= buildArgs=()
+	local containerName="$scriptName" buildDir= buildArgs=() platform=
 	while true; do
 		local flag="$1"
 		shift
@@ -166,6 +166,7 @@ hocker_run() {
 			--name) containerName="$1" && shift ;;
 			--build) buildDir="$1" && shift ;;
 			--build-arg) buildArgs+=( "$1" ) && shift ;;
+			--platform) platform="$1" && shift ;;
 			--) break ;;
 			*) panic "unknown hocker_run flag '$flag'" ;;
 		esac
@@ -185,6 +186,9 @@ hocker_run() {
 		--name "$containerName"
 		--pull never
 	)
+	if [ -n "$platform" ]; then
+		dockerArgs+=( --platform "$platform" )
+	fi
 	if [ -z "${flagValues[interactive]}" ]; then
 		dockerArgs+=(
 			--detach
@@ -277,7 +281,11 @@ hocker_run() {
 	if [ "${#doPull[@]}" -gt 0 ]; then
 		for imageToPull in "${doPull[@]}"; do
 			echo "Pulling '$imageToPull' ..."
-			docker pull "$imageToPull"
+			local pullArgs=( "$imageToPull" )
+			if [ -n "$platform" ]; then
+				pullArgs=( --platform "$platform" "${pullArgs[@]}" )
+			fi
+			docker pull "${pullArgs[@]}"
 		done
 	else
 		echo "Not pulling (--pull '$pull'): ${alwaysPull[*]}"
@@ -285,7 +293,11 @@ hocker_run() {
 	if [ "$doBuild" ]; then
 		echo
 		echo "Building '$imageName' (from '$buildDir') ..."
-		buildArgs+=( -t "$imageName" "$buildDir" )
+		buildArgs+=( --tag "$imageName" )
+		if [ -n "$platform" ]; then
+			buildArgs+=( --platform "$platform" )
+		fi
+		buildArgs+=( "$buildDir" )
 		docker build "${buildArgs[@]}"
 	elif [ -n "$buildDir" ]; then
 		echo
