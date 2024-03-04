@@ -393,7 +393,7 @@ hocker_network_connect() {
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName" buildDir=
+	local containerName="$scriptName"
 	while true; do
 		local flag="$1"
 		shift
