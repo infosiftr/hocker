@@ -104,7 +104,7 @@ script_error() {
 	exit 1
 }
 
-if ! opts="$(getopt -o '+h?pbsf' --long 'help,pull:,build:,redeploy:,interactive' -- "$@")"; then
+if ! opts="$(getopt -o '+h?pbsf' --long 'help,pull:,build:,redeploy:,debug,interactive' -- "$@")"; then
 	script_error # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 fi
 eval set -- "$opts"
@@ -131,6 +131,8 @@ while true; do
 		--redeploy) flagValues[redeploy]="$1" && shift ;;
 		-s) flagValues[redeploy]='smart' ;;
 		-f) flagValues[redeploy]='always' ;;
+
+		--debug) set -x ;;
 
 		--interactive) flagValues[interactive]=1 ;; # "secret tunnel, secret tunnel" (this is an intentionally undocumented feature)
 
