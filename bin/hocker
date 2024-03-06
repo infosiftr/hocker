@@ -194,14 +194,6 @@ hocker_run() {
 			--detach
 			--restart always
 		)
-	else
-		dockerArgs+=(
-			--interactive
-			--rm
-		)
-		if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
-			dockerArgs+=( --tty )
-		fi
 	fi
 	while [ "$#" -gt 0 ]; do
 		local arg="$1"
@@ -211,6 +203,16 @@ hocker_run() {
 		fi
 		dockerArgs+=( "$arg" )
 	done
+	if [ -n "${flagValues[interactive]}" ]; then
+		# if an interactive container is requested, we have to add these *after* the arguments from the script to make sure we get interactive + tty for sure (since the script might set them to false explicitly)
+		dockerArgs+=(
+			--interactive
+			--rm
+		)
+		if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+			dockerArgs+=( --tty )
+		fi
+	fi
 
 	local containerArgs=( "$imageName" )
 	if [ -z "${flagValues[interactive]}" ] || [ "${#interactiveArguments[@]}" -eq 0 ]; then
